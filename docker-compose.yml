@@ -1,0 +1,201 @@
+# ============================================================
+# Cloud Office – Docker Compose
+# Services: Nginx Proxy Manager · Nextcloud · OnlyOffice
+#           Vikunja · Uptime Kuma
+# ============================================================
+#
+# Network design (security isolation):
+#   proxy     – only NPM and services that need a public hostname
+#   internal  – database / backend traffic; never exposed to host
+#
+# Only ports 80 and 443 are bound to the host (via NPM).
+# All other services communicate over internal Docker networks.
+
+networks:
+  proxy:
+    driver: bridge
+  internal:
+    driver: bridge
+    internal: true   # no outbound internet access for backend nets
+
+# ---------------------------------------------------------------------------
+# Volumes
+# ---------------------------------------------------------------------------
+volumes:
+  npm_data:
+  npm_letsencrypt:
+  nextcloud_html:
+  nextcloud_data:
+  nextcloud_db:
+  onlyoffice_data:
+  vikunja_files:
+  vikunja_db:
+  uptime_kuma:
+
+# ---------------------------------------------------------------------------
+# Services
+# ---------------------------------------------------------------------------
+services:
+
+  # ─── Nginx Proxy Manager ─────────────────────────────────────────────────
+  nginx-proxy-manager:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+    ports:
+      - "80:80"    # HTTP (redirected to HTTPS by NPM)
+      - "443:443"  # HTTPS
+      - "127.0.0.1:81:81"  # NPM admin UI – bind to localhost only
+    volumes:
+      - npm_data:/data
+      - npm_letsencrypt:/etc/letsencrypt
+    networks:
+      - proxy
+    environment:
+      TZ: ${TZ}
+    healthcheck:
+      test: ["CMD", "/bin/check-health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ─── Nextcloud Database ───────────────────────────────────────────────────
+  nextcloud-db:
+    image: mariadb:11
+    container_name: nextcloud-db
+    restart: unless-stopped
+    command: --transaction-isolation=READ-COMMITTED --log-bin=binlog --binlog-format=ROW
+    volumes:
+      - nextcloud_db:/var/lib/mysql
+    networks:
+      - internal
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: ${TZ}
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  # ─── Nextcloud Redis Cache ────────────────────────────────────────────────
+  nextcloud-redis:
+    image: redis:7-alpine
+    container_name: nextcloud-redis
+    restart: unless-stopped
+    networks:
+      - internal
+    command: redis-server --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ─── Nextcloud ────────────────────────────────────────────────────────────
+  nextcloud:
+    image: nextcloud:29-apache
+    container_name: nextcloud
+    restart: unless-stopped
+    depends_on:
+      nextcloud-db:
+        condition: service_healthy
+      nextcloud-redis:
+        condition: service_healthy
+    volumes:
+      - nextcloud_html:/var/www/html
+      - nextcloud_data:/var/www/html/data
+    networks:
+      - proxy
+      - internal
+    environment:
+      MYSQL_HOST: nextcloud-db
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      REDIS_HOST: nextcloud-redis
+      NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER}
+      NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
+      NEXTCLOUD_TRUSTED_DOMAINS: cloud.${DOMAIN}
+      APACHE_DISABLE_REWRITE_IP: "1"
+      # Tell Nextcloud to trust NPM as a reverse proxy
+      TRUSTED_PROXIES: 172.16.0.0/12
+      OVERWRITEPROTOCOL: https
+      TZ: ${TZ}
+
+  # ─── OnlyOffice Document Server ──────────────────────────────────────────
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    container_name: onlyoffice
+    restart: unless-stopped
+    volumes:
+      - onlyoffice_data:/var/www/onlyoffice/Data
+    networks:
+      - proxy
+      - internal
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${ONLYOFFICE_JWT_SECRET}
+      TZ: ${TZ}
+    # OnlyOffice is resource-heavy; cap memory on small servers.
+    # Remove or raise this limit on servers with 4 GB+ RAM.
+    mem_limit: 1500m
+
+  # ─── Vikunja Database ─────────────────────────────────────────────────────
+  vikunja-db:
+    image: mariadb:11
+    container_name: vikunja-db
+    restart: unless-stopped
+    volumes:
+      - vikunja_db:/var/lib/mysql
+    networks:
+      - internal
+    environment:
+      MYSQL_ROOT_PASSWORD: ${VIKUNJA_DB_PASSWORD}
+      MYSQL_DATABASE: vikunja
+      MYSQL_USER: vikunja
+      MYSQL_PASSWORD: ${VIKUNJA_DB_PASSWORD}
+      TZ: ${TZ}
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  # ─── Vikunja (Kanban / Task Management) ──────────────────────────────────
+  vikunja:
+    image: vikunja/vikunja:latest
+    container_name: vikunja
+    restart: unless-stopped
+    depends_on:
+      vikunja-db:
+        condition: service_healthy
+    volumes:
+      - vikunja_files:/app/vikunja/files
+    networks:
+      - proxy
+      - internal
+    environment:
+      VIKUNJA_DATABASE_HOST: vikunja-db
+      VIKUNJA_DATABASE_TYPE: mysql
+      VIKUNJA_DATABASE_DATABASE: vikunja
+      VIKUNJA_DATABASE_USER: vikunja
+      VIKUNJA_DATABASE_PASSWORD: ${VIKUNJA_DB_PASSWORD}
+      VIKUNJA_SERVICE_JWTSECRET: ${VIKUNJA_SERVICE_JWT_SECRET}
+      VIKUNJA_SERVICE_FRONTENDURL: https://tasks.${DOMAIN}/
+      TZ: ${TZ}
+
+  # ─── Uptime Kuma ──────────────────────────────────────────────────────────
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: uptime-kuma
+    restart: unless-stopped
+    volumes:
+      - uptime_kuma:/app/data
+    networks:
+      - proxy
+    environment:
+      TZ: ${TZ}
