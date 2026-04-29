@@ -1,0 +1,8 @@
+.env
+nginx-proxy-manager/
+nextcloud/
+nextcloud-db/
+onlyoffice/
+vikunja/
+uptime-kuma/
+backup/archives/
