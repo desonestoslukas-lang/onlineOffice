@@ -53,6 +53,8 @@ pointing to your server's public IPv4 address:
 
 | Hostname              | Type | Value          | TTL  |
 |-----------------------|------|----------------|------|
+| yourdomain.de         | A    | YOUR_SERVER_IP | 300  |
+| www.yourdomain.de     | A    | YOUR_SERVER_IP | 300  |
 | cloud.yourdomain.de   | A    | YOUR_SERVER_IP | 300  |
 | office.yourdomain.de  | A    | YOUR_SERVER_IP | 300  |
 | tasks.yourdomain.de   | A    | YOUR_SERVER_IP | 300  |
@@ -121,13 +123,13 @@ Default credentials:
 1. Click **Proxy Hosts → Add Proxy Host**
 2. Fill in:
 
-| Field              | Nextcloud           | OnlyOffice          | Vikunja             | Uptime Kuma         |
-|--------------------|---------------------|---------------------|---------------------|---------------------|
-| Domain             | cloud.yourdomain.de | office.yourdomain.de| tasks.yourdomain.de | status.yourdomain.de|
-| Scheme             | http                | http                | http                | http                |
-| Forward Hostname   | nextcloud           | onlyoffice          | vikunja             | uptime-kuma         |
-| Forward Port       | 80                  | 80                  | 3456                | 3001                |
-| Block Common Exploits | ✓               | ✓                   | ✓                   | ✓                   |
+| Field              | Website             | Nextcloud           | OnlyOffice          | Vikunja             | Uptime Kuma         |
+|--------------------|---------------------|---------------------|---------------------|---------------------|---------------------|
+| Domain             | yourdomain.de       | cloud.yourdomain.de | office.yourdomain.de| tasks.yourdomain.de | status.yourdomain.de|
+| Scheme             | http                | http                | http                | http                | http                |
+| Forward Hostname   | laborluzern-website | nextcloud           | onlyoffice          | vikunja             | uptime-kuma         |
+| Forward Port       | 80                  | 80                  | 80                  | 3456                | 3001                |
+| Block Common Exploits | ✓              | ✓                   | ✓                   | ✓                   | ✓                   |
 
 3. On the **SSL** tab:
    - SSL Certificate: **Request a new SSL Certificate**
