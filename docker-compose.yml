@@ -199,3 +199,15 @@ services:
       - proxy
     environment:
       TZ: ${TZ}
+
+  # ─── Labor Luzern – Static Website ───────────────────────────────────────
+  website:
+    image: nginx:alpine
+    container_name: laborluzern-website
+    restart: unless-stopped
+    volumes:
+      - ./website:/usr/share/nginx/html:ro
+    networks:
+      - proxy
+    environment:
+      TZ: ${TZ}
